@@ -2,6 +2,8 @@ import os
 import time
 import logging
 import argparse
+import signal
+import sys
 from google import genai
 from google.genai import types
 from rich.console import Console
@@ -83,53 +85,57 @@ def generate(input_url: str, prompt_text: str, api_key: str, output_dir: str):
     total_chars = 0
     first_chunk_time = None
     last_thought = None
+    interrupted = False
     with console.status("Starting transcription...", spinner="dots") as status:
-        with open(output_filename, "w", encoding="utf-8") as outfile:
-            for chunk in client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.usage_metadata:
-                    usage_metadata = chunk.usage_metadata
-                
-                if (
-                    chunk.candidates is None
-                    or chunk.candidates[0].content is None
-                    or chunk.candidates[0].content.parts is None
+        try:
+            with open(output_filename, "w", encoding="utf-8") as outfile:
+                for chunk in client.models.generate_content_stream(
+                    model=model,
+                    contents=contents,
+                    config=generate_content_config,
                 ):
-                    continue
-                
-                part = chunk.candidates[0].content.parts[0]
-                
-                if first_chunk_time is None:
-                    first_chunk_time = time.time()
-                
-                is_thought = False
-                if hasattr(part, "thought") and part.thought:
-                    is_thought = True
-                    if isinstance(part.thought, bool) and part.text:
-                        last_thought = part.text
-                    elif isinstance(part.thought, str):
-                        last_thought = part.thought
-                
-                if not is_thought and part.text:
-                    text_chunk = part.text
-                    outfile.write(text_chunk)
-                    chunk_count += 1
-                    total_chars += len(text_chunk)
+                    if chunk.usage_metadata:
+                        usage_metadata = chunk.usage_metadata
                     
-                elapsed_time = time.time() - first_chunk_time
-                token_info = ""
-                if usage_metadata:
-                    token_info = f", Tokens: {usage_metadata.total_token_count}"
-                
-                thought_info = ""
-                if last_thought:
-                    thought_info = f" | Thinking: {last_thought.replace('\n', ' ')}..."
+                    if (
+                        chunk.candidates is None
+                        or chunk.candidates[0].content is None
+                        or chunk.candidates[0].content.parts is None
+                    ):
+                        continue
+                    
+                    part = chunk.candidates[0].content.parts[0]
+                    
+                    if first_chunk_time is None:
+                        first_chunk_time = time.time()
+                    
+                    is_thought = False
+                    if hasattr(part, "thought") and part.thought:
+                        is_thought = True
+                        if isinstance(part.thought, bool) and part.text:
+                            last_thought = part.text
+                        elif isinstance(part.thought, str):
+                            last_thought = part.thought
+                    
+                    if not is_thought and part.text:
+                        text_chunk = part.text
+                        outfile.write(text_chunk)
+                        chunk_count += 1
+                        total_chars += len(text_chunk)
+                        
+                    elapsed_time = time.time() - first_chunk_time
+                    token_info = ""
+                    if usage_metadata:
+                        token_info = f", Tokens: {usage_metadata.total_token_count}"
+                    
+                    thought_info = ""
+                    if last_thought:
+                        thought_info = f" | Thinking: {last_thought.replace('\n', ' ')}..."
 
-                status.update(f"Transcribing... (Chunks: {chunk_count}, Chars: {total_chars}, Time: {elapsed_time:.1f}s{token_info}{thought_info})")
-    
+                    status.update(f"Transcribing... (Chunks: {chunk_count}, Chars: {total_chars}, Time: {elapsed_time:.1f}s{token_info}{thought_info})")
+        except (KeyboardInterrupt, SystemExit):
+            logger.warning("\nTranscription interrupted by user or system.")
+            interrupted = True
     
     if first_chunk_time:
         logger.info("Time elapsed: %.2fs", time.time() - first_chunk_time)
@@ -137,7 +143,10 @@ def generate(input_url: str, prompt_text: str, api_key: str, output_dir: str):
     if usage_metadata:
         logger.info("Total token usage: %d", usage_metadata.total_token_count)
 
-    logger.info("Transcription saved successfully.")
+    if not interrupted:
+        logger.info("Transcription saved successfully.")
+    else:
+        logger.info("Transcription partially saved due to interruption.")
 
     # Save meta information
     meta_filename = os.path.join(output_dir, f"{input_url_filename}.meta.txt")

@@ -11,11 +11,10 @@ A powerful AI-based transcription tool using Google Gemini, designed for documen
     - **OCR Removal**: Automatically removes embedded text layers via redaction to force visual re-analysis (can be disabled with `--keep-ocr`).
 - **URL Downloads**: Automatically downloads files from web URLs passed to `--input-file`.
 - **Overwrite Protection**: Prevents accidental data loss by appending timestamps to filenames if the output file already exists (disable with `--overwrite`).
-- **Progress Tracking**: Rich console output with progress bars for downloads.
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.13+ (Tested, could also work with lower versions)
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
 ### Dependencies

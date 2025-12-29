@@ -1,0 +1,248 @@
+"""
+Module for handling Gemini transcription.
+"""
+
+import logging
+import os
+import time
+
+from google import genai
+from google.genai import types
+from rich.console import Console
+
+from src.pdf_processor import process_pdf
+from src.utils import get_unique_filename
+
+logger = logging.getLogger(__name__)
+console = Console()
+
+def generate(
+        input_url: str | None,
+        input_file: str | None,
+        prompt_text: str,
+        api_key: str,
+        output_dir: str,
+        pages: str | None = None,
+        keep_ocr: bool = False,
+        overwrite: bool = False
+    ):
+    """
+    Generates transcription from a file or URL using Google Gemini.
+    """
+    logger.info("Starting generation process...")
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    client = genai.Client(
+        api_key=api_key
+    )
+
+    file_uri_to_delete = None
+    input_name = "unknown"
+    source_identifier = "unknown"
+    user_content_part = None
+
+    if input_file:
+        logger.info("Using local file: %s", input_file)
+        input_name = os.path.basename(input_file)
+         
+        processed_file_path = input_file
+        if input_file.lower().endswith(".pdf"):
+            # Process PDF (select pages, rasterize)
+            processed_file_path = process_pdf(input_file, pages, keep_ocr, output_dir)
+         
+        logger.info("Uploading file: %s", processed_file_path)
+        uploaded_file = client.files.upload(file=processed_file_path)
+        logger.info("Uploaded file as: %s", uploaded_file.uri)
+        file_uri_to_delete = uploaded_file.name # Save for cleanup
+         
+        # Prepare content for Gemini
+        user_content_part = types.Part.from_uri(
+            file_uri=uploaded_file.uri,
+            mime_type=uploaded_file.mime_type
+        )
+        source_identifier = input_name
+
+    elif input_url:
+        logger.info("Using input url '%s'", input_url)
+        # Extract filename from the URL
+        input_name = os.path.basename(input_url)
+        # Sanitize filename to remove invalid characters
+        input_name = input_name.replace("%2F", "_")
+        # Shorten if too long
+        if len(input_name) > 255:
+            input_name = input_name[:255]
+            
+        user_content_part = types.Part.from_text(text=f"Process this URL: {input_url}")
+        
+        source_identifier = input_name
+        
+    else:
+        raise ValueError("Either input_url or input_file must be provided.")
+
+    logger.info("Identifier: %s", source_identifier)
+
+    # Use the provided prompt text
+    if input_url:
+        prompt = prompt_text.replace("INPUT_URL", input_url)
+    else:
+        prompt = prompt_text.replace("INPUT_URL", f"Local File: {source_identifier}")
+
+    logger.debug("Prompt:\n%s", prompt)
+
+    model = "gemini-3-pro-preview"
+    
+    parts = [types.Part.from_text(text=prompt)]
+    if user_content_part:
+        parts.append(user_content_part)
+        
+    contents = [
+        types.Content(
+            role="user",
+            parts=parts,
+        ),
+    ]
+    tools = [
+    ]
+    if input_url:
+        tools.append(types.Tool(url_context=types.UrlContext()))
+    generate_content_config = types.GenerateContentConfig(
+        temperature=0,
+        thinking_config=types.ThinkingConfig(
+            thinking_level="LOW",
+            include_thoughts=True,
+        ),
+        media_resolution="MEDIA_RESOLUTION_HIGH",
+        tools=tools,
+    )
+
+    output_filename = os.path.join(output_dir, f"{source_identifier}.md")
+    output_filename = get_unique_filename(output_filename, overwrite)
+    logger.info("Saving transcription to: %s", output_filename)
+
+    usage_metadata = None
+
+    chunk_count = 0
+    total_chars = 0
+    first_chunk_time = None
+    last_thought = None
+    interrupted = False
+    with console.status("Starting transcription...", spinner="dots") as status:
+        try:
+            with open(output_filename, "w", encoding="utf-8") as outfile:
+                for chunk in client.models.generate_content_stream(
+                    model=model,
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    if chunk.usage_metadata:
+                        usage_metadata = chunk.usage_metadata
+                    
+                    if (
+                        chunk.candidates is None
+                        or chunk.candidates[0].content is None
+                        or chunk.candidates[0].content.parts is None
+                    ):
+                        continue
+                    
+                    part = chunk.candidates[0].content.parts[0]
+                    
+                    if first_chunk_time is None:
+                        first_chunk_time = time.time()
+                    
+                    is_thought = False
+                    if hasattr(part, "thought") and part.thought:
+                        is_thought = True
+                        if isinstance(part.thought, bool) and part.text:
+                            last_thought = part.text
+                        elif isinstance(part.thought, str):
+                            last_thought = part.thought
+                    
+                    if not is_thought and part.text:
+                        text_chunk = part.text
+                        outfile.write(text_chunk)
+                        chunk_count += 1
+                        total_chars += len(text_chunk)
+                        
+                    elapsed_time = time.time() - first_chunk_time
+                    token_info = ""
+                    if usage_metadata:
+                        token_info = f", Tokens: {usage_metadata.total_token_count}"
+                    
+                    thought_info = ""
+                    if last_thought:
+                        thought_info = f" | Thinking: {last_thought.replace('\n', ' ')}..."
+
+                    status.update(
+                        f"Transcribing... (Chunks: {chunk_count}, "
+                        f"Chars: {total_chars}, Time: {elapsed_time:.1f}s"
+                        f"{token_info}{thought_info})"
+                    )
+        except (KeyboardInterrupt, SystemExit):
+            logger.warning("\nTranscription interrupted by user or system.")
+            interrupted = True
+    
+    if first_chunk_time:
+        logger.info("Time elapsed: %.2fs", time.time() - first_chunk_time)
+        
+    if usage_metadata:
+        logger.info("Total token usage: %d", usage_metadata.total_token_count)
+
+    if not interrupted:
+        logger.info("Transcription saved successfully.")
+    else:
+        logger.info("Transcription partially saved due to interruption.")
+
+    # Save meta information
+    output_basename = os.path.basename(output_filename)
+    if output_basename.endswith(".md"):
+        meta_stem = output_basename[:-3] # remove .md
+    else:
+        meta_stem = output_basename
+    meta_filename = os.path.join(output_dir, f"{meta_stem}.meta.txt")
+    meta_filename = get_unique_filename(meta_filename, overwrite)
+    logger.info("Saving meta information to: %s", meta_filename)
+    with open(meta_filename, "w", encoding="utf-8") as metafile:
+        metafile.write(f"Model: {model}\n")
+        metafile.write("Configuration:\n")
+        metafile.write(f"  Temperature: {generate_content_config.temperature}\n")
+        metafile.write(
+            f"  Thinking Config Thinking Level: "
+            f"{generate_content_config.thinking_config.thinking_level}\n"
+        )
+        metafile.write(
+            f"  Thinking Config Include Thoughts: "
+            f"{generate_content_config.thinking_config.include_thoughts}\n"
+        )
+        metafile.write(
+            f"  Thinking Config Thinking Budget: "
+            f"{generate_content_config.thinking_config.thinking_budget}\n"
+        )
+        metafile.write(f"  Media Resolution: {generate_content_config.media_resolution}\n")
+        metafile.write(
+            f"  Tools: {', '.join(str(tool) for tool in generate_content_config.tools)}\n"
+        )
+        metafile.write("\n")
+        metafile.write(f"Prompt:\n{prompt}\n")
+        metafile.write("\n")
+        if input_url:
+            metafile.write(f"Input URL:\n{input_url}\n")
+        elif input_file:
+            metafile.write(f"Input File:\n{input_file}\n")
+        metafile.write("\n")
+        if usage_metadata:
+            metafile.write("Usage Metadata:\n")
+            metafile.write(f"  Prompt Token Count: {usage_metadata.prompt_token_count}\n")
+            metafile.write(f"  Candidates Token Count: {usage_metadata.candidates_token_count}\n")
+            metafile.write(f"  Total Token Count: {usage_metadata.total_token_count}\n")
+        else:
+            metafile.write("Usage Metadata: Not available\n")
+            
+    logger.info("Meta information saved successfully.")
+
+    if file_uri_to_delete:
+        try:
+            client.files.delete(name=file_uri_to_delete)
+            logger.info("Deleted remote file: %s", file_uri_to_delete)
+        except Exception as e: # pylint: disable=broad-exception-caught
+            logger.warning("Failed to delete remote file: %s", e)

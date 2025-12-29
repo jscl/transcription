@@ -11,13 +11,11 @@ from google.genai import types
 from rich.console import Console
 
 from src.pdf_processor import process_pdf
-from src.utils import get_unique_filename
 
 logger = logging.getLogger(__name__)
 console = Console()
 
-def generate(
-        input_url: str | None,
+def transcribe(
         input_file: str | None,
         prompt_text: str,
         api_key: str,
@@ -29,7 +27,23 @@ def generate(
     """
     Generates transcription from a file or URL using Google Gemini.
     """
-    logger.info("Starting generation process...")
+    if not input_file:
+        raise ValueError("input_file must be provided.")
+
+    file_uri_to_delete = None
+    input_name = "unknown"
+    user_content_part = None
+    logger.info("Using local file: %s", input_file)
+    input_name = os.path.basename(input_file)
+    output_filename = os.path.join(output_dir, f"{input_name}.md")
+    if not overwrite and os.path.exists(output_filename):
+        logger.info(
+            "Output file '%s' already exists. Skipping processing.",
+            output_filename
+        )
+        return
+    
+    logger.info("Starting transcription process...")
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
@@ -37,56 +51,29 @@ def generate(
         api_key=api_key
     )
 
-    file_uri_to_delete = None
-    input_name = "unknown"
-    source_identifier = "unknown"
-    user_content_part = None
-
-    if input_file:
-        logger.info("Using local file: %s", input_file)
-        input_name = os.path.basename(input_file)
+    processed_file_path = input_file
+    if input_file.lower().endswith(".pdf"):
+        # Process PDF (select pages, rasterize)
+        processed_file_path = process_pdf(input_file, pages, keep_ocr, output_dir)
          
-        processed_file_path = input_file
-        if input_file.lower().endswith(".pdf"):
-            # Process PDF (select pages, rasterize)
-            processed_file_path = process_pdf(input_file, pages, keep_ocr, output_dir)
-         
-        logger.info("Uploading file: %s", processed_file_path)
-        uploaded_file = client.files.upload(file=processed_file_path)
-        logger.info("Uploaded file as: %s", uploaded_file.uri)
-        file_uri_to_delete = uploaded_file.name # Save for cleanup
-         
-        # Prepare content for Gemini
-        user_content_part = types.Part.from_uri(
-            file_uri=uploaded_file.uri,
-            mime_type=uploaded_file.mime_type
-        )
-        source_identifier = input_name
-
-    elif input_url:
-        logger.info("Using input url '%s'", input_url)
-        # Extract filename from the URL
-        input_name = os.path.basename(input_url)
-        # Sanitize filename to remove invalid characters
-        input_name = input_name.replace("%2F", "_")
-        # Shorten if too long
-        if len(input_name) > 255:
-            input_name = input_name[:255]
-            
-        user_content_part = types.Part.from_text(text=f"Process this URL: {input_url}")
+    logger.info("Uploading file: %s", processed_file_path)
+    uploaded_file = client.files.upload(file=processed_file_path)
+    logger.info("Uploaded file as: %s", uploaded_file.uri)
+    file_uri_to_delete = uploaded_file.name # Save for cleanup
         
-        source_identifier = input_name
-        
-    else:
-        raise ValueError("Either input_url or input_file must be provided.")
+    # Prepare content for Gemini
+    user_content_part = types.Part.from_uri(
+        file_uri=uploaded_file.uri,
+        mime_type=uploaded_file.mime_type
+    )
 
-    logger.info("Identifier: %s", source_identifier)
+    logger.info("Identifier: %s", input_name)
 
     # Use the provided prompt text
-    if input_url:
-        prompt = prompt_text.replace("INPUT_URL", input_url)
-    else:
-        prompt = prompt_text.replace("INPUT_URL", f"Local File: {source_identifier}")
+    replacement = "File: " + input_name
+    if pages:
+        replacement = f"{replacement} containing pages: {pages}"
+    prompt = prompt_text.replace("INPUT_URL", replacement)
 
     logger.debug("Prompt:\n%s", prompt)
 
@@ -102,10 +89,7 @@ def generate(
             parts=parts,
         ),
     ]
-    tools = [
-    ]
-    if input_url:
-        tools.append(types.Tool(url_context=types.UrlContext()))
+    
     generate_content_config = types.GenerateContentConfig(
         temperature=0,
         thinking_config=types.ThinkingConfig(
@@ -113,11 +97,9 @@ def generate(
             include_thoughts=True,
         ),
         media_resolution="MEDIA_RESOLUTION_HIGH",
-        tools=tools,
     )
 
-    output_filename = os.path.join(output_dir, f"{source_identifier}.md")
-    output_filename = get_unique_filename(output_filename, overwrite)
+
     logger.info("Saving transcription to: %s", output_filename)
 
     usage_metadata = None
@@ -200,7 +182,7 @@ def generate(
     else:
         meta_stem = output_basename
     meta_filename = os.path.join(output_dir, f"{meta_stem}.meta.txt")
-    meta_filename = get_unique_filename(meta_filename, overwrite)
+    
     logger.info("Saving meta information to: %s", meta_filename)
     with open(meta_filename, "w", encoding="utf-8") as metafile:
         metafile.write(f"Model: {model}\n")
@@ -219,15 +201,14 @@ def generate(
             f"{generate_content_config.thinking_config.thinking_budget}\n"
         )
         metafile.write(f"  Media Resolution: {generate_content_config.media_resolution}\n")
-        metafile.write(
-            f"  Tools: {', '.join(str(tool) for tool in generate_content_config.tools)}\n"
-        )
+        if generate_content_config.tools:
+            metafile.write(
+                f"  Tools: {', '.join(str(tool) for tool in generate_content_config.tools)}\n"
+            )
         metafile.write("\n")
         metafile.write(f"Prompt:\n{prompt}\n")
         metafile.write("\n")
-        if input_url:
-            metafile.write(f"Input URL:\n{input_url}\n")
-        elif input_file:
+        if input_file:
             metafile.write(f"Input File:\n{input_file}\n")
         metafile.write("\n")
         if usage_metadata:

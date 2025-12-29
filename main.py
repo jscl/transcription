@@ -13,8 +13,7 @@ from rich.console import Console
 # Ensure src module can be imported
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.utils import download_file  # pylint: disable=wrong-import-position
-from src.transcriber import generate  # pylint: disable=wrong-import-position
+from src.transcriber import transcribe  # pylint: disable=wrong-import-position
 
 # Configure logging
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
@@ -39,19 +38,15 @@ def main():
     """
     Main function to parse arguments and run the transcription.
     """
-    parser = argparse.ArgumentParser(description="Transcribe a file from a URL or local path.")
+    parser = argparse.ArgumentParser(description="Transcribe a local file.")
     
-    input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument(
-        "--input-url", "-iu", type=str, help="The URL of the file to transcribe."
-    )
-    input_group.add_argument(
-        "--input-file", "-if", type=str, help="Path to a local file (image or PDF)."
+    parser.add_argument(
+        "--input-file", "-if", type=str, required=True, help="Path to a local file (image or PDF)."
     )
     
     parser.add_argument(
         "--pages", type=str,
-        help="Page ranges for PDF (e.g., '1-3, 5'). Only used with --input-file for PDFs."
+        help="Page ranges for PDF (e.g., '1-3, 5')."
     )
     parser.add_argument(
         "--keep-ocr", action="store_true",
@@ -70,7 +65,7 @@ def main():
     )
     parser.add_argument(
         "--overwrite", action="store_true",
-        help="Overwrite output files if they exist. Default is to append timestamp."
+        help="Overwrite output files if they exist. Default is to skip processing."
     )
     parser.add_argument(
         "--output-directory", "-o", type=str, default=DATA_DIR,
@@ -96,21 +91,7 @@ def main():
             "or the GEMINI_API_KEY environment variable."
         )
 
-    if args.input_file and (
-        args.input_file.startswith("http://") or args.input_file.startswith("https://")
-    ):
-        # Download the file first
-        try:
-            args.input_file = download_file(args.input_file, args.output_directory)
-        except Exception as e: # pylint: disable=broad-exception-caught
-            logger.error("Failed to download file: %s", e)
-            sys.exit(1)
-
-    if args.input_url and (args.pages or args.keep_ocr):
-        logger.warning("--pages and --keep-ocr are ignored when using --input-url.")
-
-    generate(
-        input_url=args.input_url,
+    transcribe(
         input_file=args.input_file,
         prompt_text=prompt_text,
         api_key=gemini_api_key,

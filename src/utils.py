@@ -3,49 +3,12 @@ Utility functions for file handling and processing.
 """
 
 import logging
-import os
-from datetime import datetime
 
-import requests
 from rich.console import Console
-from rich.progress import (BarColumn, Progress, SpinnerColumn,
-                           TaskProgressColumn, TextColumn)
 
 logger = logging.getLogger(__name__)
 console = Console()
 
-def download_file(url: str, output_dir: str) -> str:
-    """Downloads a file from a URL to the output directory with a progress bar."""
-    logger.info("Downloading file from: %s", url)
-    
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-    
-    filename = url.split("/")[-1]
-    # Basic sanitization
-    filename = filename.split("?")[0] 
-    local_path = os.path.join(output_dir, filename)
-    
-    with requests.get(url, stream=True, timeout=30) as response:
-        response.raise_for_status()
-        total_size = int(response.headers.get("content-length", 0))
-        
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console
-        ) as progress:
-            task = progress.add_task(f"Downloading {filename}...", total=total_size)
-            
-            with open(local_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    progress.update(task, advance=len(chunk))
-                    
-    logger.info("Downloaded file to: %s", local_path)
-    return local_path
 
 def parse_pages(pages_arg: str) -> list[int]:
     """Parses a string of page ranges (e.g., '1-3, 5') into a list of 0-indexed page numbers."""
@@ -59,18 +22,3 @@ def parse_pages(pages_arg: str) -> list[int]:
         else:
             pages.add(int(part) - 1)
     return sorted(list(pages))
-
-def get_unique_filename(filepath: str, overwrite: bool) -> str:
-    """
-    Returns a unique filename if overwrite is False and file exists.
-    Appends _{YYYYMMDD_HHMMSS} to the stem.
-    """
-    if overwrite or not os.path.exists(filepath):
-        return filepath
-    
-    # File exists and overwrite is False -> generate unique name
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base, ext = os.path.splitext(filepath)
-    unique_path = f"{base}_{timestamp}{ext}"
-    logger.info("File '%s' exists. Saving to '%s' instead.", filepath, unique_path)
-    return unique_path

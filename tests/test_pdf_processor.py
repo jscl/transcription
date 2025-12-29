@@ -25,7 +25,9 @@ def test_process_pdf_no_pages_no_ocr(mock_open, tmp_path):
     output_dir = str(tmp_path)
     input_path = "test.pdf"
     
-    result = pdf_processor.process_pdf(input_path, pages_arg=None, keep_ocr=False, output_dir=output_dir)
+    result = pdf_processor.process_pdf(
+        input_path, pages_arg=None, keep_ocr=False, output_dir=output_dir
+    )
     
     # Assertions
     mock_open.assert_called_with(input_path)

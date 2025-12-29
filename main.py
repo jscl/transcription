@@ -23,12 +23,15 @@ logger = logging.getLogger(__name__)
 
 console = Console()
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(DATA_DIR, exist_ok=True)
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
-def generate(input_url: str, prompt_text: str, api_key: str):
+def generate(input_url: str, prompt_text: str, api_key: str, output_dir: str):
     logger.info("For input I will use url '%s'", input_url)
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
 
     # Extract filename from the URL
     input_url_filename = os.path.basename(input_url)
@@ -71,8 +74,8 @@ def generate(input_url: str, prompt_text: str, api_key: str):
         tools=tools,
     )
 
-    output_filename = os.path.join(DATA_DIR, f"{input_url_filename}.md")
-    logger.info("Saving transcription to: %s", input_url_filename)
+    output_filename = os.path.join(output_dir, f"{input_url_filename}.md")
+    logger.info("Saving transcription to: %s", output_filename)
 
     usage_metadata = None
 
@@ -137,8 +140,8 @@ def generate(input_url: str, prompt_text: str, api_key: str):
     logger.info("Transcription saved successfully.")
 
     # Save meta information
-    meta_filename = os.path.join(DATA_DIR, f"{input_url_filename}.meta.txt")
-    logger.info("Saving meta information to: %s", os.path.basename(meta_filename))
+    meta_filename = os.path.join(output_dir, f"{input_url_filename}.meta.txt")
+    logger.info("Saving meta information to: %s", meta_filename)
     with open(meta_filename, "w", encoding="utf-8") as metafile:
         metafile.write(f"Model: {model}\n")
         metafile.write("Configuration:\n")
@@ -169,6 +172,7 @@ def main():
     parser.add_argument("--prompt-file", "-pf", type=str, help="Path to the file containing the prompt.")
     parser.add_argument("--prompt", "-p", type=str, help="The prompt text to use. Overrides --prompt-file.")
     parser.add_argument("--gemini-api-key", "-gk", type=str, help="The Gemini API key to use. Overrides the GEMINI_API_KEY environment variable.")
+    parser.add_argument("--output-directory", "-o", type=str, default=DATA_DIR, help=f"The directory where the transcription and meta file will be written to. Otherwise write to sub-directory {DATA_DIR}/.")
     args = parser.parse_args()
 
     prompt_text = None
@@ -184,7 +188,7 @@ def main():
     if not gemini_api_key:
         parser.error("Gemini API key must be provided via --gemini-api-key or the GEMINI_API_KEY environment variable.")
 
-    generate(input_url=args.input_url, prompt_text=prompt_text, api_key=gemini_api_key)
+    generate(input_url=args.input_url, prompt_text=prompt_text, api_key=gemini_api_key, output_dir=args.output_directory)
 
 if __name__ == "__main__":
     main()

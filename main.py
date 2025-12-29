@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import argparse
+from datetime import datetime
 import fitz  # pymupdf
 import requests
 from google import genai
@@ -116,7 +117,22 @@ def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_d
     logger.info(f"Saved processed PDF to: {output_path}")
     return output_path
 
-def generate(input_url: str | None, input_file: str | None, prompt_text: str, api_key: str, output_dir: str, pages: str | None = None, keep_ocr: bool = False):
+def get_unique_filename(filepath: str, overwrite: bool) -> str:
+    """
+    Returns a unique filename if overwrite is False and file exists.
+    Appends _{YYYYMMDD_HHMMSS} to the stem.
+    """
+    if overwrite or not os.path.exists(filepath):
+        return filepath
+    
+    # File exists and overwrite is False -> generate unique name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base, ext = os.path.splitext(filepath)
+    unique_path = f"{base}_{timestamp}{ext}"
+    logger.info(f"File '{filepath}' exists. Saving to '{unique_path}' instead.")
+    return unique_path
+
+def generate(input_url: str | None, input_file: str | None, prompt_text: str, api_key: str, output_dir: str, pages: str | None = None, keep_ocr: bool = False, overwrite: bool = False):
     logger.info("Starting generation process...")
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -215,6 +231,7 @@ def generate(input_url: str | None, input_file: str | None, prompt_text: str, ap
     )
 
     output_filename = os.path.join(output_dir, f"{source_identifier}.md")
+    output_filename = get_unique_filename(output_filename, overwrite)
     logger.info("Saving transcription to: %s", output_filename)
 
     usage_metadata = None
@@ -287,7 +304,28 @@ def generate(input_url: str | None, input_file: str | None, prompt_text: str, ap
         logger.info("Transcription partially saved due to interruption.")
 
     # Save meta information
-    meta_filename = os.path.join(output_dir, f"{source_identifier}.meta.txt")
+    # We want to match the timestamp of the main output file if possible, 
+    # but the simplest robust way is to check collision for the meta file independently 
+    # OR derive it from the final output_filename.
+    # Deriving from output_filename is better to keep them paired.
+    
+    # If output_filename was "foo_2024... .md", we want "foo_2024... .pdf.meta.txt" (or similar).
+    # current logic uses {source_identifier}.meta.txt.
+    # If source_identifier is "doc.pdf", output is "doc.pdf.md".
+    # If output became "doc.pdf_TIMESTAMP.md", we should probably make meta "doc.pdf_TIMESTAMP.meta.txt".
+    
+    # Let's derive the stem from the actual used output_filename
+    output_basename = os.path.basename(output_filename)
+    # output_filename ends in .md usually.
+    if output_basename.endswith(".md"):
+         meta_stem = output_basename[:-3] # remove .md
+    else:
+         meta_stem = output_basename
+         
+    meta_filename = os.path.join(output_dir, f"{meta_stem}.meta.txt")
+    # No, if we derived it from a unique name, it should be unique.
+    
+    meta_filename = get_unique_filename(meta_filename, overwrite)
     logger.info("Saving meta information to: %s", meta_filename)
     with open(meta_filename, "w", encoding="utf-8") as metafile:
         metafile.write(f"Model: {model}\n")
@@ -338,6 +376,7 @@ def main():
     parser.add_argument("--prompt-file", "-pf", type=str, help="Path to the file containing the prompt.")
     parser.add_argument("--prompt", "-p", type=str, help="The prompt text to use. Overrides --prompt-file.")
     parser.add_argument("--gemini-api-key", "-gk", type=str, help="The Gemini API key to use. Overrides the GEMINI_API_KEY environment variable.")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite output files if they exist. Default is to append timestamp.")
     parser.add_argument("--output-directory", "-o", type=str, default=DATA_DIR, help=f"The directory where the transcription and meta file will be written to. Otherwise write to sub-directory {DATA_DIR}/.")
     args = parser.parse_args()
 
@@ -372,7 +411,8 @@ def main():
         api_key=gemini_api_key,
         output_dir=args.output_directory,
         pages=args.pages,
-        keep_ocr=args.keep_ocr
+        keep_ocr=args.keep_ocr,
+        overwrite=args.overwrite
     )
 
 if __name__ == "__main__":

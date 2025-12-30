@@ -13,6 +13,7 @@ from rich.console import Console
 # Ensure src module can be imported
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from src.utils import download_file  # pylint: disable=wrong-import-position
 from src.transcriber import transcribe  # pylint: disable=wrong-import-position
 
 # Configure logging

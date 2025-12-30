@@ -10,7 +10,7 @@ from src.utils import parse_pages
 
 logger = logging.getLogger(__name__)
 
-def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_dir: str) -> str:
+def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_dir: str) -> list[str]:
     """
     Processes a PDF: selects pages (unless keep_ocr is True).
     Returns the path to the processed PDF.
@@ -29,7 +29,13 @@ def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_d
         doc.select(selected_pages)
         logger.info("Selected %d pages: %s", len(doc), ", ".join(str(int(p + 1)) for p in selected_pages))
 
-    output_filename = os.path.basename(input_path)
+    output_paths = []
+    base_output_filename = os.path.basename(input_path)
+    filename_stem, filename_ext = os.path.splitext(base_output_filename)
+    
+    # Apply redactions if needed (once for the whole doc, before splitting)
+    # Note: If we save individual pages, we need to ensure redactions are applied to them.
+    # We can modify the doc in memory and then extract pages.
     if not keep_ocr:
         # Use redaction to remove text but keep images and graphics
         logger.info("Applying redactions to remove text/OCR layer...")
@@ -39,11 +45,28 @@ def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_d
                 images=0, #pymupdf.PDF_REDACT_IMAGE_NONE,  # fail-safe: keep images
                 graphics=0#pymupdf.PDF_REDACT_LINE_ART_NONE  # fail-safe: keep vector graphics
             )
-        
-        output_filename = f"processed_{output_filename}"
+            
+    # Split pages into individual files
+    split_dir = output_dir
+    os.makedirs(split_dir, exist_ok=True)
     
-    output_path = os.path.join(output_dir, output_filename)
-    doc.ez_save(output_path)
+    logger.info("Splitting PDF into individual pages...")
+    for i in range(len(doc)):
+        page_num = i + 1
+        # Create a new document for the single page
+        new_doc = pymupdf.open()
+        new_doc.insert_pdf(doc, from_page=i, to_page=i)
+        
+        page_filename = f"{filename_stem}_page_{page_num}{filename_ext}"
+        if not keep_ocr:
+             page_filename = f"processed_{page_filename}"
+             
+        page_output_path = os.path.join(split_dir, page_filename)
+        new_doc.ez_save(page_output_path)
+        new_doc.close()
+        output_paths.append(page_output_path)
+        logger.debug("Saved page %d to: %s", page_num, page_output_path)
+
     doc.close()
-    logger.info("Saved processed PDF to: %s", output_path)
-    return output_path
+    logger.info("Split PDF into %d files.", len(output_paths))
+    return output_paths

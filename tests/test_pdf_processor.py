@@ -1,74 +1,100 @@
 """
-Unit tests for the PDF processor module.
+Integration tests for the PDF processor module using real PDF artifacts.
 """
 
-from unittest.mock import MagicMock, patch
-
+import os
 import pytest
-
+import pymupdf
 from src import pdf_processor
 
+TEST_PDF_PATH = os.path.join(os.path.dirname(__file__), "artifacts", "test.pdf")
 
-@patch("src.pdf_processor.pymupdf.open")
-def test_process_pdf_no_pages_no_ocr(mock_open, tmp_path):
-    """Test PDF processing without page selection and with OCR removal."""
-    # Setup mock doc
-    mock_doc = MagicMock()
-    mock_open.return_value = mock_doc
-    # len(doc) behavior
-    mock_doc.__len__.return_value = 5
-    
-    # Mock page iteration
-    mock_page = MagicMock()
-    mock_doc.__iter__.return_value = iter([mock_page])
-    
+def test_process_pdf_split_all(tmp_path):
+    """
+    Test processing the 'test.pdf' without page selection.
+    It should split all pages into separate files.
+    When keep_ocr is False (default), text should be removed (redacted).
+    """
     output_dir = str(tmp_path)
-    input_path = "test.pdf"
     
-    result = pdf_processor.process_pdf(
-        input_path, pages_arg=None, keep_ocr=False, output_dir=output_dir
+    # Ensure test artifact exists
+    assert os.path.exists(TEST_PDF_PATH), f"Test artifact not found at {TEST_PDF_PATH}"
+    
+    # Check original page count and ensure it has text initially for valid testing
+    with pymupdf.open(TEST_PDF_PATH) as doc:
+        original_page_count = 3
+        # Verify input has some text to begin with, otherwise the test is meaningless
+        start_text = ""
+        for page in doc:
+             start_text += page.get_text()
+    
+    if not start_text.strip():
+        pytest.skip("Test PDF has no text/OCR layer to verify redaction against.")
+
+    # Process with keep_ocr=False
+    result_paths = pdf_processor.process_pdf(
+        TEST_PDF_PATH, pages_arg=None, keep_ocr=False, output_dir=output_dir
     )
     
-    # Assertions
-    mock_open.assert_called_with(input_path)
-    # Since keep_ocr=False, should apply redactions
-    mock_page.add_redact_annot.assert_called()
-    mock_page.apply_redactions.assert_called()
+    # Verify results
+    assert len(result_paths) == original_page_count
     
-    # Should save
-    mock_doc.ez_save.assert_called()
-    assert "processed_test.pdf" in result
+    for i, path in enumerate(result_paths):
+        assert os.path.exists(path)
+        expected_name = f"processed_test_page_{i+1}.pdf"
+        assert os.path.basename(path) == expected_name
+        
+        # Verify valid PDF and NO TEXT (redacted)
+        try:
+            with pymupdf.open(path) as page_doc:
+                assert len(page_doc) == 1
+                page_text = page_doc[0].get_text()
+                # We expect redaction to remove text
+                assert not page_text.strip(), f"Page {i+1} should have empty text after redaction, found: {page_text[:100]}..."
+        except Exception as e:
+            pytest.fail(f"Generated file {path} inspection failed: {e}")
 
-@patch("src.pdf_processor.pymupdf.open")
-def test_process_pdf_with_pages(mock_open, tmp_path):
-    """Test PDF processing with page selection."""
-    mock_doc = MagicMock()
-    mock_open.return_value = mock_doc
-    mock_doc.__len__.return_value = 10
-
+def test_process_pdf_select_pages(tmp_path):
+    """
+    Test processing 'test.pdf' with specific page selection.
+    When keep_ocr is True, text should be preserved.
+    """
     output_dir = str(tmp_path)
-    input_path = "test.pdf"
-
-    pdf_processor.process_pdf(
-        input_path, pages_arg="1-3", keep_ocr=True, output_dir=output_dir
+    # Select first page
+    pages_arg = "1" 
+    
+    # Process with keep_ocr=True
+    result_paths = pdf_processor.process_pdf(
+        TEST_PDF_PATH, pages_arg=pages_arg, keep_ocr=True, output_dir=output_dir
     )
+    
+    assert len(result_paths) == 1
+    path = result_paths[0]
+    assert os.path.exists(path)
+    # When keep_ocr=True, filename doesn't have "processed_" prefix
+    assert os.path.basename(path) == "test_page_1.pdf"
 
-    # Should select pages [0, 1, 2]
-    mock_doc.select.assert_called_with([0, 1, 2])
-
-    # keep_ocr=True -> no redactions
-    # ez_save should be called.
-    mock_doc.ez_save.assert_called()
+    try:
+        with pymupdf.open(path) as page_doc:
+            assert len(page_doc) == 1
+            page_text = page_doc[0].get_text()
+            # We expect text to be present
+            assert page_text.strip(), "Page 1 should have text when keep_ocr=True"
+    except Exception as e:
+        pytest.fail(f"Generated file {path} inspection failed: {e}")
 
 def test_process_pdf_invalid_pages(tmp_path):
-    """Test PDF processing with invalid page selection raises error."""
-    with patch("src.pdf_processor.pymupdf.open") as mock_open:
-        mock_doc = MagicMock()
-        mock_open.return_value = mock_doc
-        mock_doc.__len__.return_value = 2 # 2 pages (0, 1)
-
-        # Request page 5 -> invalid
-        with pytest.raises(ValueError):
-            pdf_processor.process_pdf(
-                "test.pdf", pages_arg="5", keep_ocr=False, output_dir=str(tmp_path)
-            )
+    """
+    Test invalid page selection.
+    """
+    output_dir = str(tmp_path)
+    
+    with pymupdf.open(TEST_PDF_PATH) as doc:
+        max_page = len(doc)
+    
+    invalid_page = str(max_page + 10)
+    
+    with pytest.raises(ValueError):
+        pdf_processor.process_pdf(
+            TEST_PDF_PATH, pages_arg=invalid_page, keep_ocr=False, output_dir=output_dir
+        )

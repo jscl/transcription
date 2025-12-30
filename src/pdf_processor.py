@@ -58,8 +58,6 @@ def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_d
         new_doc.insert_pdf(doc, from_page=i, to_page=i)
         
         page_filename = f"{filename_stem}_page_{page_num}{filename_ext}"
-        if not keep_ocr:
-             page_filename = f"processed_{page_filename}"
              
         page_output_path = os.path.join(split_dir, page_filename)
         new_doc.ez_save(page_output_path)

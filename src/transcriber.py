@@ -112,7 +112,8 @@ def transcribe(
         keep_ocr: bool = False,
         overwrite: bool = False,
         parallel_pages: int = MAX_PARALLEL_PAGES,
-        delete_temporary_files: bool = True
+        delete_temporary_files: bool = True,
+        save_single_pages: bool = False
     ):
     """
     Generates transcription from a file or URL using Google Gemini.
@@ -214,6 +215,21 @@ def transcribe(
             
         if res.get('usage_metadata'):
             total_tokens += res['usage_metadata'].total_token_count
+
+        if save_single_pages and res.get('text'):
+            # Save individual page transcription
+            original_split_path = files_to_process[i]
+            base_name = os.path.basename(original_split_path)
+            if base_name.startswith("processed_"):
+                base_name = base_name[len("processed_"):]
+            
+            page_output_filename = os.path.join(os.path.dirname(original_split_path), f"{base_name}.md")
+            logger.info("Saving single page transcription to: %s", page_output_filename)
+            try:
+                with open(page_output_filename, "w", encoding="utf-8") as pf:
+                    pf.write(res['text'])
+            except Exception as e:
+                logger.error("Failed to save single page transcription %s: %s", page_output_filename, e)
 
     final_text = "".join(full_transcript)
     

@@ -5,7 +5,7 @@ Wörtlich transkribieren: Den gesamten Text exakt so erfassen, wie er erscheint,
 Layout beibehalten (wenn möglich): Verwenden Sie Formatierungen (wie Zeilenumbrüche oder einfaches Markdown für Spalten/Abschnitte), um das visuelle Layout der Originalzeitung möglichst genau nachzubilden, insbesondere für Überschriften, Unterüberschriften und den Artikeltext. Entfernen Sie Zeilenumbrüche wie -, =, füge Wortfragmente zu einem ganzen Wort zusammen, wenn die Zeilenumbrüche die Worte trennen. 
 Unleserlichen Text kennzeichnen: Wenn ein Textabschnitt unleserlich oder verdeckt ist, verwenden Sie [UNLESERLICH] dieses Zeichen.
 Korrigiere die Familiennamen, hier werden hauptsächlich mennonitsche Familiennamen verwendet.
-Fügen Sie Metadaten hinzu: Geben Sie am Anfang des Transkripts den Namen der Zeitung, das Datum, die Seitenzahl und, falls im Quellbild/-text vorhanden, die Spaltennummer an. Personennamen sollte in fetter Schrift hervorgehoben werden. Wenn als Input eine URL verwendet wurde, blende die Quelle im Ergebnis ein. 
+Fügen Sie Metadaten hinzu: Geben Sie am Anfang des Transkripts den Namen der Zeitung, das Datum, falls im Quellbild/-text vorhanden, die Spaltennummer an. Personennamen sollte in fetter Schrift hervorgehoben werden. Wenn als Input eine URL verwendet wurde, blende die Quelle im Ergebnis ein. 
 Verzichten Sie auf zusätzliche Kommentare: Senden Sie ausschließlich das angeforderte Transkript und die Metadaten zurück. Fügen Sie keine einleitenden oder abschließenden Bemerkungen hinzu (z. B. „Hier ist das Transkript …“).
 Details & Einschränkungen:
 Quellentyp: Zeitungsartikel. 

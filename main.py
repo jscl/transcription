@@ -51,7 +51,7 @@ def main():
     )
     parser.add_argument(
         "--keep-ocr", action="store_true",
-        help="Keep embedded OCR layer in PDF. Default is to remove it (rasterize)."
+        help="Keep embedded OCR layer in PDF. Default is to remove it."
     )
 
     parser.add_argument(
@@ -62,6 +62,11 @@ def main():
     parser.add_argument(
         "--delete-temporary-files", action=argparse.BooleanOptionalAction, default=True,
         help="Delete temporary files (split pages) after processing. Default is True."
+    )
+
+    parser.add_argument(
+        "--save-single-pages", "-sp", action="store_true",
+        help="Save single copies of every transcribed page. Default is False."
     )
     
     parser.add_argument(
@@ -78,6 +83,11 @@ def main():
         "--overwrite", action="store_true",
         help="Overwrite output files if they exist. Default is to skip processing."
     )
+    parser.add_argument(
+        "--create-subfolder", "-cs", action=argparse.BooleanOptionalAction, default=True,
+        help="Create a new subfolder in the output directory for every processed input file. Default is True."
+    )
+
     parser.add_argument(
         "--output-directory", "-o", type=str, default=DATA_DIR,
         help=f"The directory where the transcription and meta file will be written to. "
@@ -102,16 +112,24 @@ def main():
             "or the GEMINI_API_KEY environment variable."
         )
 
+    output_dir = args.output_directory
+    if args.create_subfolder:
+        input_filename = os.path.basename(args.input_file)
+        # Use splitext to get filename without extension
+        subfolder_name = os.path.splitext(input_filename)[0]
+        output_dir = os.path.join(output_dir, subfolder_name)
+
     transcribe(
         input_file=args.input_file,
         prompt_text=prompt_text,
         api_key=gemini_api_key,
-        output_dir=args.output_directory,
+        output_dir=output_dir,
         pages=args.pages,
         keep_ocr=args.keep_ocr,
         overwrite=args.overwrite,
         parallel_pages=args.parallel_pages,
-        delete_temporary_files=args.delete_temporary_files
+        delete_temporary_files=args.delete_temporary_files,
+        save_single_pages=args.save_single_pages
     )
 
 if __name__ == "__main__":

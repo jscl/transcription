@@ -41,7 +41,7 @@ def test_process_pdf_split_all(tmp_path):
     
     for i, path in enumerate(result_paths):
         assert os.path.exists(path)
-        expected_name = f"processed_test_page_{i+1}.pdf"
+        expected_name = f"test_page_{i+1}.pdf"
         assert os.path.basename(path) == expected_name
         
         # Verify valid PDF and NO TEXT (redacted)

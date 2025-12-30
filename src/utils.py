@@ -12,6 +12,16 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 def download_file(url: str, output_dir: str) -> str:
+    """
+    Downloads a file from a URL to a specified output directory with a progress bar.
+
+    Args:
+        url (str): The URL of the file to download.
+        output_dir (str): The directory where the file should be saved.
+
+    Returns:
+        str: The local path to the downloaded file.
+    """
     logger.info("Downloading file from: %s", url)
     
     # Ensure output directory exists
@@ -21,6 +31,9 @@ def download_file(url: str, output_dir: str) -> str:
     # Basic sanitization
     filename = filename.split("?")[0] 
     local_path = os.path.join(output_dir, filename)
+    if os.path.exists(local_path):
+        logger.info("File already exists: %s. Skipping download.", local_path)
+        return local_path
     
     with requests.get(url, stream=True, timeout=30) as response:
         response.raise_for_status()

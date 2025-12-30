@@ -9,7 +9,7 @@ import pytest
 from src import pdf_processor
 
 
-@patch("src.pdf_processor.fitz.open")
+@patch("src.pdf_processor.pymupdf.open")
 def test_process_pdf_no_pages_no_ocr(mock_open, tmp_path):
     """Test PDF processing without page selection and with OCR removal."""
     # Setup mock doc
@@ -39,7 +39,7 @@ def test_process_pdf_no_pages_no_ocr(mock_open, tmp_path):
     mock_doc.ez_save.assert_called()
     assert "processed_test.pdf" in result
 
-@patch("src.pdf_processor.fitz.open")
+@patch("src.pdf_processor.pymupdf.open")
 def test_process_pdf_with_pages(mock_open, tmp_path):
     """Test PDF processing with page selection."""
     mock_doc = MagicMock()
@@ -62,7 +62,7 @@ def test_process_pdf_with_pages(mock_open, tmp_path):
 
 def test_process_pdf_invalid_pages(tmp_path):
     """Test PDF processing with invalid page selection raises error."""
-    with patch("src.pdf_processor.fitz.open") as mock_open:
+    with patch("src.pdf_processor.pymupdf.open") as mock_open:
         mock_doc = MagicMock()
         mock_open.return_value = mock_doc
         mock_doc.__len__.return_value = 2 # 2 pages (0, 1)

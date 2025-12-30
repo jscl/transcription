@@ -5,19 +5,18 @@ Module for processing PDF files (page selection, redaction).
 import logging
 import os
 
-import fitz  # pymupdf
-
+import pymupdf
 from src.utils import parse_pages
 
 logger = logging.getLogger(__name__)
 
 def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_dir: str) -> str:
     """
-    Processes a PDF: selects pages and rasterizes them (unless keep_ocr is True).
+    Processes a PDF: selects pages (unless keep_ocr is True).
     Returns the path to the processed PDF.
     """
     logger.info("Processing PDF: %s", input_path)
-    doc = fitz.open(input_path)
+    doc = pymupdf.open(input_path)
     
     # Select pages
     if pages_arg:
@@ -37,8 +36,8 @@ def process_pdf(input_path: str, pages_arg: str | None, keep_ocr: bool, output_d
         for page in doc:
             page.add_redact_annot(page.rect)
             page.apply_redactions(
-                images=2,  # fitz.PDF_REDACT_IMAGE_NONE
-                graphics=2  # fitz.PDF_REDACT_LINE_ART_NONE
+                images=0, #pymupdf.PDF_REDACT_IMAGE_NONE,  # fail-safe: keep images
+                graphics=0#pymupdf.PDF_REDACT_LINE_ART_NONE  # fail-safe: keep vector graphics
             )
         
         output_filename = f"processed_{output_filename}"

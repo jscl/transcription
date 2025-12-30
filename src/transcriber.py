@@ -5,12 +5,13 @@ Module for handling Gemini transcription.
 import logging
 import os
 import time
-
+import sys
 from google import genai
 from google.genai import types
 from rich.console import Console
 
 from src.pdf_processor import process_pdf
+from src.utils import download_file
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -30,12 +31,21 @@ def transcribe(
     if not input_file:
         raise ValueError("input_file must be provided.")
 
+    input_file_local = input_file
+    is_downloaded_file = input_file.startswith("http://") or input_file.startswith("https://")
+    if is_downloaded_file:
+        # Download the file first
+        try:
+            input_file_local = download_file(input_file, output_dir)
+        except Exception as e: # pylint: disable=broad-exception-caught
+            logger.error("Failed to download file: %s", e)
+            sys.exit(1)
+
     file_uri_to_delete = None
-    input_name = "unknown"
     user_content_part = None
-    logger.info("Using local file: %s", input_file)
-    input_name = os.path.basename(input_file)
-    output_filename = os.path.join(output_dir, f"{input_name}.md")
+    logger.info("Using local file: %s", input_file_local)
+    input_file_name = os.path.basename(input_file_local)
+    output_filename = os.path.join(output_dir, f"{input_file_name}.md")
     if not overwrite and os.path.exists(output_filename):
         logger.info(
             "Output file '%s' already exists. Skipping processing.",
@@ -51,10 +61,10 @@ def transcribe(
         api_key=api_key
     )
 
-    processed_file_path = input_file
-    if input_file.lower().endswith(".pdf"):
+    processed_file_path = input_file_local
+    if input_file_local.lower().endswith(".pdf"):
         # Process PDF (select pages, rasterize)
-        processed_file_path = process_pdf(input_file, pages, keep_ocr, output_dir)
+        processed_file_path = process_pdf(input_file_local, pages, keep_ocr, output_dir)
          
     logger.info("Uploading file: %s", processed_file_path)
     uploaded_file = client.files.upload(file=processed_file_path)
@@ -67,10 +77,8 @@ def transcribe(
         mime_type=uploaded_file.mime_type
     )
 
-    logger.info("Identifier: %s", input_name)
-
     # Use the provided prompt text
-    replacement = "File: " + input_name
+    replacement = "Local file: " + input_file_name
     if pages:
         replacement = f"{replacement} containing pages: {pages}"
     prompt = prompt_text.replace("INPUT_URL", replacement)
@@ -208,8 +216,10 @@ def transcribe(
         metafile.write("\n")
         metafile.write(f"Prompt:\n{prompt}\n")
         metafile.write("\n")
-        if input_file:
-            metafile.write(f"Input File:\n{input_file}\n")
+        if input_file_local:
+            metafile.write(f"Input File: {input_file_name}\n")
+        if is_downloaded_file:
+            metafile.write(f"Downloaded from: {input_file}\n")
         metafile.write("\n")
         if usage_metadata:
             metafile.write("Usage Metadata:\n")

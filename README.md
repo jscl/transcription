@@ -18,7 +18,7 @@ A powerful AI-based transcription tool using Google Gemini, designed for documen
 
 ### Dependencies
 - `google-genai`
-- `pymupdf` (fitz)
+- `pymupdf`
 - `rich`
 
 ## Installation

@@ -53,6 +53,16 @@ def main():
         "--keep-ocr", action="store_true",
         help="Keep embedded OCR layer in PDF. Default is to remove it (rasterize)."
     )
+
+    parser.add_argument(
+        "--parallel-pages", "-pa", type=int, default=10,
+        help="Max number of parallel pages to process. Default is 10."
+    )
+    
+    parser.add_argument(
+        "--delete-temporary-files", action=argparse.BooleanOptionalAction, default=True,
+        help="Delete temporary files (split pages) after processing. Default is True."
+    )
     
     parser.add_argument(
         "--prompt-file", "-pf", type=str, help="Path to the file containing the prompt."
@@ -99,7 +109,9 @@ def main():
         output_dir=args.output_directory,
         pages=args.pages,
         keep_ocr=args.keep_ocr,
-        overwrite=args.overwrite
+        overwrite=args.overwrite,
+        parallel_pages=args.parallel_pages,
+        delete_temporary_files=args.delete_temporary_files
     )
 
 if __name__ == "__main__":

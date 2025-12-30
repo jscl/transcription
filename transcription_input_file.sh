@@ -9,4 +9,6 @@ DEFAULT_PROMPT="prompts/mr.txt"
 uv run python main.py \
   --input-file "$DEFAULT_FILE" \
   --prompt-file "$DEFAULT_PROMPT" \
+  --out data \
+  --parallel-pages 5 \
   "$@"

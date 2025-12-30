@@ -16,6 +16,7 @@ from src.utils import download_file
 
 logger = logging.getLogger(__name__)
 console = Console()
+MAX_PARALLEL_PAGES = 10
 
 def _process_single_chunk(
     api_key: str,
@@ -109,7 +110,9 @@ def transcribe(
         output_dir: str,
         pages: str | None = None,
         keep_ocr: bool = False,
-        overwrite: bool = False
+        overwrite: bool = False,
+        parallel_pages: int = MAX_PARALLEL_PAGES,
+        delete_temporary_files: bool = True
     ):
     """
     Generates transcription from a file or URL using Google Gemini.
@@ -172,7 +175,7 @@ def transcribe(
     final_text = ""
     
     with console.status(f"Processing {len(files_to_process)} parts in parallel (Model: {model})...", spinner="dots") as status:
-        with ThreadPoolExecutor(max_workers=min(len(files_to_process), 10)) as executor:
+        with ThreadPoolExecutor(max_workers=min(len(files_to_process), parallel_pages)) as executor:
             future_to_file = {
                 executor.submit(process_wrapper, i, FilePath): FilePath 
                 for i, FilePath in enumerate(files_to_process)
@@ -234,8 +237,8 @@ def transcribe(
     with open(meta_filename, "w", encoding="utf-8") as metafile:
         metafile.write(f"Model: {model}\n")
         metafile.write("Configuration:\n")
-        metafile.write("  Parallel Processing: Yes\n")
-        metafile.write(f"  Parts: {len(files_to_process)}\n")
+        metafile.write("Parallel Processing: Yes\n")
+        metafile.write(f"Parts: {len(files_to_process)}\n")
         metafile.write("\n")
         metafile.write(f"Prompt:\n{base_prompt}\n")
         metafile.write("\n")
@@ -247,3 +250,13 @@ def transcribe(
         metafile.write(f"Total Token Count: {total_tokens}\n")
             
     logger.info("Meta information saved successfully.")
+    
+    if delete_temporary_files and input_file_local.lower().endswith(".pdf") and len(files_to_process) > 0:
+        logger.info("Cleaning up temporary page files...")
+        for fpath in files_to_process:
+            try:
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            except Exception as e: # pylint: disable=broad-exception-caught
+                logger.warning("Failed to delete temporary file %s: %s", fpath, e)
+        logger.info("Temporary files cleaned up.")
